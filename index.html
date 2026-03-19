@@ -1,0 +1,412 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>永久组合持仓分析</title>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--line:#d9e4ef;--text:#1b2a39;--muted:#5f6f80;--brand:#1763a9;--ok:#1e7e49;--warn:#a35f0a;}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Microsoft YaHei",sans-serif;color:var(--text);background:radial-gradient(circle at 15% 0,#e8f1ff 0,transparent 45%),var(--bg)}
+.wrap{max-width:1100px;margin:20px auto;padding:0 12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:12px;box-shadow:0 8px 18px rgba(15,42,69,.06)}
+.head{padding:12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center}
+h2{margin:0;font-size:18px}
+.small{font-size:12px;color:var(--muted)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+button{border:1px solid var(--brand);background:var(--brand);color:#fff;padding:7px 10px;border-radius:8px;cursor:pointer}
+button.sec{background:#fff;color:var(--brand)}
+button.del{border-color:#e0a0a0;color:#b43b3b;background:#fff;padding:4px 8px}
+.status{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.ok{color:var(--ok)}.warn{color:var(--warn)}
+.table{overflow:auto}
+table{width:100%;min-width:980px;border-collapse:collapse}th,td{padding:8px 10px;border-bottom:1px solid #ebf1f8;text-align:left;font-size:13px;white-space:nowrap}th{font-size:12px;color:var(--muted);background:#fbfdff}
+input,select{border:1px solid #cfd9e5;border-radius:7px;padding:5px 7px;font-size:13px;background:#fff}
+input.nm{width:150px}input.cd{width:110px}input.sh{width:95px}
+.price{font-variant-numeric:tabular-nums;color:#0d3f6d;font-weight:600}
+.total{margin:10px;border:1px dashed #bad1ea;background:#f7fbff;border-radius:10px;padding:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.kpis{padding:10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.kpi{border:1px solid var(--line);border-radius:10px;padding:10px}.kpi .t{font-size:12px;color:var(--muted)}.kpi .v{font-size:20px;font-weight:700;margin-top:5px}.bar{height:7px;background:#eef4fb;border-radius:99px;margin-top:8px;overflow:hidden}.bar span{display:block;height:100%;background:linear-gradient(90deg,#2e89de,#45b4b8)}
+.chartTop{padding:10px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:190px 1fr;gap:10px}
+.series{display:flex;flex-wrap:wrap;gap:8px 12px;max-height:110px;overflow:auto;border:1px solid #e3ecf7;border-radius:10px;padding:8px;background:#fcfeff}
+.itm{display:inline-flex;align-items:center;gap:5px;font-size:12px}.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.canvasWrap{padding:10px}.canvasBox{border:1px solid #e3ecf7;border-radius:10px;padding:8px;background:linear-gradient(180deg,#fcfeff,#f8fbff)}
+#cv{width:100%;height:340px;display:block}
+@media (max-width:760px){.kpis{grid-template-columns:1fr}.chartTop{grid-template-columns:1fr}#cv{height:300px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="panel">
+    <div class="head">
+      <div>
+        <h2>永久组合持仓分析</h2>
+        <div class="small">启动时读取同目录 <code>portfolio_data.json</code>；编辑后可导出 JSON 并手动上传到 GitHub。</div>
+      </div>
+      <div class="actions">
+        <button id="refresh">刷新价格</button>
+        <button id="add" class="sec">新增标的</button>
+        <button id="save" class="sec">手动保存</button>
+        <button id="loadjson" class="sec">重读JSON</button>
+        <button id="export" class="sec">导出JSON</button>
+      </div>
+    </div>
+    <div class="status">
+      <span id="st">状态：等待抓取</span>
+      <span id="tm">上次更新：暂无</span>
+    </div>
+    <div class="table">
+      <table>
+        <thead><tr><th>名称</th><th>代码</th><th>类型</th><th>份额</th><th>最新价</th><th>市值</th><th>操作</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="head"><h2>四类资产占比</h2><div class="small">仅汇总：现金类/国债类/黄金类/股票类</div></div>
+    <div class="total"><div>组合总市值</div><div id="total" style="font-size:22px;font-weight:700">¥0.00</div></div>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <section class="panel">
+    <div class="head"><h2>趋势图（按天）</h2><div class="small">每天只保留一条，若当天多次刷新，自动覆盖为最后一次。</div></div>
+    <div class="chartTop">
+      <div>
+        <div class="small" style="margin-bottom:6px">显示范围</div>
+        <select id="rng">
+          <option value="7">近7天</option><option value="30" selected>近30天</option><option value="90">近90天</option>
+          <option value="180">近180天</option><option value="365">近365天</option><option value="all">全部</option>
+        </select>
+        <div class="small" id="hinfo" style="margin-top:6px">历史快照：0 天</div>
+      </div>
+      <div id="series" class="series"></div>
+    </div>
+    <div class="canvasWrap"><div class="canvasBox"><canvas id="cv"></canvas></div></div>
+  </section>
+</div>
+
+<script>
+const KEY='permanent_portfolio_v2', OLD='permanent_portfolio_v1';
+const DATA_FILE='portfolio_data.json';
+const TYPES=['现金类','国债类','黄金类','股票类'];
+const COLORS=['#0f5fa7','#e4572e','#2e8b57','#d68c1e','#9147b1','#017f8a','#bf3f57','#6b8f00','#4169e1','#8a5a44','#2c7a7b'];
+const DEF=[
+{id:'cash',name:'现金',code:'CASH',type:'现金类',share:0},
+{id:'bond_511090',name:'30年中国国债',code:'511090',type:'国债类',share:0},
+{id:'gold_518850',name:'黄金基金',code:'518850',type:'黄金类',share:0},
+{id:'qy_power',name:'黔源电力',code:'002039',type:'现金类',share:0},
+{id:'bond_short_511260',name:'短期国债',code:'511260',type:'现金类',share:0},
+{id:'sp500_513500',name:'标普500',code:'513500',type:'股票类',share:0},
+{id:'nasdaq_159632',name:'纳斯达克',code:'159632',type:'股票类',share:0},
+{id:'hs300_510330',name:'华夏300',code:'510330',type:'股票类',share:0},
+{id:'gold_000217',name:'黄金基金',code:'000217',type:'黄金类',share:0},
+{id:'usbond_003385',name:'美国长期国债',code:'003385',type:'国债类',share:0}
+];
+
+const S={assets:[],prices:{},history:{},sel:{total:true},rows:{},val:null,remoteStatus:'unknown'};
+const R={
+tbody:document.getElementById('tbody'),st:document.getElementById('st'),tm:document.getElementById('tm'),
+total:document.getElementById('total'),kpis:document.getElementById('kpis'),refresh:document.getElementById('refresh'),
+add:document.getElementById('add'),save:document.getElementById('save'),loadjson:document.getElementById('loadjson'),export:document.getElementById('export'),rng:document.getElementById('rng'),
+hinfo:document.getElementById('hinfo'),series:document.getElementById('series'),cv:document.getElementById('cv')
+};
+
+const num=v=>{v=Number(v);return Number.isFinite(v)?v:0};
+const code=v=>String(v||'').trim().toUpperCase();
+const money=v=>'¥'+num(v).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const price=v=>num(v)>0?num(v).toLocaleString('zh-CN',{minimumFractionDigits:4,maximumFractionDigits:4}):'--';
+const axis=v=>v>=1e8?(v/1e8).toFixed(2)+'亿':v>=1e4?(v/1e4).toFixed(2)+'万':num(v).toFixed(0);
+const did=()=>('a_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5));
+const dkey=(d=new Date())=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const dparse=s=>{const p=String(s||'').split('-').map(Number);return p.length===3?new Date(p[0],p[1]-1,p[2]):new Date(0)};
+
+function setStatus(t,k=''){
+  R.st.textContent='状态：'+t;
+  R.st.classList.remove('ok','warn');
+  if(k)R.st.classList.add(k);
+}
+
+function storageSuffix(){
+  return '（本地已保存；需要“导出JSON”再上传仓库）';
+}
+
+function sanitize(a){
+  const x={id:String(a.id||did()),name:String(a.name||'未命名').trim()||'未命名',code:code(a.code),type:TYPES.includes(a.type)?a.type:'股票类',share:num(a.share)};
+  if(x.code==='现金')x.code='CASH';
+  return x;
+}
+
+function ensureSel(){
+  if(typeof S.sel!=='object'||!S.sel)S.sel={total:true};
+  if(typeof S.sel.total!=='boolean')S.sel.total=true;
+  const live=new Set(['total']);
+  S.assets.forEach(a=>{live.add(a.id);if(typeof S.sel[a.id]!=='boolean')S.sel[a.id]=true;});
+  Object.keys(S.sel).forEach(k=>{if(!live.has(k))delete S.sel[k];});
+}
+
+function buildPayload(){
+  return {
+    version:2,
+    assets:S.assets.map(a=>({id:a.id,name:a.name,code:a.code,type:a.type,share:num(a.share)})),
+    prices:S.prices,
+    history:S.history,
+    selected:S.sel,
+    savedAt:new Date().toISOString()
+  };
+}
+
+function applyPayload(p){
+  if(p&&Array.isArray(p.assets))S.assets=p.assets.map(sanitize);else S.assets=DEF.map(sanitize);
+  if(p&&p.shares&&!Array.isArray(p.assets))S.assets.forEach(a=>a.share=num(p.shares[a.id]));
+  S.prices={...(p&&p.lastPrices||{}),...(p&&p.prices||{})};
+  S.history=(p&&p.history&&typeof p.history==='object')?p.history:{};
+  S.sel=(p&&p.selected&&typeof p.selected==='object')?p.selected:S.sel;
+  ensureSel();
+}
+
+function loadFromLocalStorage(){
+  let p=null;
+  try{const raw=localStorage.getItem(KEY);if(raw)p=JSON.parse(raw);}catch{}
+  if(!p)try{const raw=localStorage.getItem(OLD);if(raw)p=JSON.parse(raw);}catch{}
+  return p;
+}
+
+function saveToLocalStorage(payload){
+  localStorage.setItem(KEY,JSON.stringify(payload));
+}
+
+function parseSavedAt(p){
+  const t=p&&p.savedAt?Date.parse(p.savedAt):NaN;
+  return Number.isFinite(t)?t:0;
+}
+
+function choosePayload(localPayload,remotePayload){
+  if(!localPayload&&!remotePayload)return null;
+  if(!localPayload)return remotePayload;
+  if(!remotePayload)return localPayload;
+  return parseSavedAt(remotePayload)>=parseSavedAt(localPayload)?remotePayload:localPayload;
+}
+
+async function loadFromRemoteJson(){
+  try{
+    const resp=await fetch(`${DATA_FILE}?_=${Date.now()}`,{cache:'no-store'});
+    if(resp.status===404){S.remoteStatus='missing';return null;}
+    if(!resp.ok){S.remoteStatus='error';return null;}
+    const txt=await resp.text();
+    if(!String(txt||'').trim()){S.remoteStatus='missing';return null;}
+    const p=JSON.parse(txt);
+    S.remoteStatus='loaded';
+    return p;
+  }catch(err){
+    S.remoteStatus='error';
+    console.warn('读取同目录 JSON 失败',err);
+    return null;
+  }
+}
+
+function downloadJson(filename,text){
+  const blob=new Blob([text],{type:'application/json;charset=utf-8'});
+  const a=document.createElement('a');
+  const url=URL.createObjectURL(blob);
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+function exportJson(){
+  const payload=buildPayload();
+  saveToLocalStorage(payload);
+  downloadJson(DATA_FILE,JSON.stringify(payload,null,2));
+  setStatus('已导出 portfolio_data.json，请上传到 GitHub 仓库', 'ok');
+}
+
+async function reloadJson(){
+  const p=await loadFromRemoteJson();
+  if(!p){setStatus('同目录未读取到有效 portfolio_data.json，保留当前本地数据','warn');return;}
+  applyPayload(p);
+  renderRows();ensureSel();renderSeries();updateHistoryInfo();renderPrices();
+  save();
+  setStatus('已从同目录 portfolio_data.json 重新载入', 'ok');
+}
+
+async function load(){
+  const localP=loadFromLocalStorage();
+  const remoteP=await loadFromRemoteJson();
+  applyPayload(choosePayload(localP,remoteP));
+}
+
+function save(){
+  saveToLocalStorage(buildPayload());
+}
+
+function typeSelect(v){
+  const s=document.createElement('select');
+  TYPES.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;if(t===v)o.selected=true;s.appendChild(o);});
+  return s;
+}
+
+function renderRows(){
+  R.tbody.innerHTML=''; S.rows={};
+  S.assets.forEach(a=>{
+    const tr=document.createElement('tr');
+    const td1=document.createElement('td'),nm=document.createElement('input');nm.className='nm';nm.value=a.name;nm.onchange=()=>{a.name=String(nm.value||'').trim()||'未命名';nm.value=a.name;ensureSel();renderSeries();draw();save();};td1.appendChild(nm);
+    const td2=document.createElement('td'),cd=document.createElement('input');cd.className='cd';cd.placeholder='如 510330/CASH';cd.value=a.code;cd.onchange=()=>{let v=code(cd.value);if(v==='现金')v='CASH';a.code=v;cd.value=v;if(v==='CASH')S.prices[a.id]=1;save();renderPrices();};td2.appendChild(cd);
+    const td3=document.createElement('td'),tp=typeSelect(a.type);tp.onchange=()=>{a.type=tp.value;save();compute();};td3.appendChild(tp);
+    const td4=document.createElement('td'),sh=document.createElement('input');sh.type='number';sh.step='any';sh.min='0';sh.className='sh';sh.value=num(a.share)?a.share:'';sh.oninput=()=>{a.share=num(sh.value);save();compute();};td4.appendChild(sh);
+    const td5=document.createElement('td');td5.className='price';td5.textContent='--';
+    const td6=document.createElement('td');td6.textContent=money(0);
+    const td7=document.createElement('td'),del=document.createElement('button');del.className='del';del.textContent='删除';del.onclick=()=>{S.assets=S.assets.filter(x=>x.id!==a.id);delete S.prices[a.id];delete S.sel[a.id];save();ensureSel();renderRows();renderSeries();compute();};td7.appendChild(del);
+    [td1,td2,td3,td4,td5,td6,td7].forEach(x=>tr.appendChild(x));
+    R.tbody.appendChild(tr);
+    S.rows[a.id]={p:td5,v:td6};
+  });
+}
+
+function symbols(c){
+  c=code(c);
+  if(!/^\d{6}$/.test(c))return [];
+  const arr=[];
+  if(/^[569]/.test(c))arr.push('sh'+c);else arr.push('sz'+c);
+  arr.push('jj'+c,'sh'+c,'sz'+c);
+  return [...new Set(arr)];
+}
+
+function pick(fields){
+  for(const i of [3,4,5,1]){const p=Number(fields[i]);if(Number.isFinite(p)&&p>0&&p<1e6)return p;}
+  for(let i=0;i<Math.min(fields.length,24);i++){if(i===2)continue;const p=Number(fields[i]);if(Number.isFinite(p)&&p>0&&p<1e6)return p;}
+  return null;
+}
+
+function loadScript(url){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');s.src=url;s.async=true;
+    s.onload=()=>{s.remove();res()};
+    s.onerror=()=>{s.remove();rej(new Error('load fail'))};
+    document.head.appendChild(s);
+  });
+}
+
+async function fetchQ(assets,src){
+  const set=new Set(); assets.forEach(a=>symbols(a.code).forEach(x=>set.add(x)));
+  const syms=[...set]; if(!syms.length)return new Map();
+  const url=(src==='t'?'https://qt.gtimg.cn/q=':'https://hq.sinajs.cn/list=')+encodeURIComponent(syms.join(','))+'&_='+Date.now();
+  await loadScript(url);
+  const map=new Map();
+  assets.forEach(a=>{for(const s of symbols(a.code)){const raw=src==='t'?window['v_'+s]:window['hq_str_'+s];if(!raw||typeof raw!=='string')continue;const p=pick(raw.split(src==='t'?'~':','));if(p){map.set(a.id,p);break;}}});
+  return map;
+}
+
+function renderSeries(){
+  R.series.innerHTML='';
+  const items=[{k:'total',n:'总市值'}].concat(S.assets.map(a=>({k:a.id,n:a.name||a.code||a.id})));
+  items.forEach((it,i)=>{
+    const lb=document.createElement('label');lb.className='itm';
+    const ck=document.createElement('input');ck.type='checkbox';ck.checked=!!S.sel[it.k];ck.onchange=()=>{S.sel[it.k]=ck.checked;save();draw();};
+    const dot=document.createElement('span');dot.className='dot';dot.style.background=(it.k==='total')?'#0f5fa7':COLORS[i%COLORS.length];
+    const tx=document.createElement('span');tx.textContent=it.n;
+    lb.append(ck,dot,tx);R.series.appendChild(lb);
+  });
+}
+
+function renderPrices(){S.assets.forEach(a=>{const r=S.rows[a.id];if(r)r.p.textContent=price(S.prices[a.id]);});compute();}
+
+function compute(){
+  const cat={'现金类':0,'国债类':0,'黄金类':0,'股票类':0}, vals={}; let total=0;
+  S.assets.forEach(a=>{const v=num(a.share)*num(S.prices[a.id]);vals[a.id]=v;cat[a.type]=num(cat[a.type])+v;total+=v;const r=S.rows[a.id];if(r)r.v.textContent=money(v);});
+  R.total.textContent=money(total);
+  R.kpis.innerHTML='';
+  TYPES.forEach(t=>{const v=num(cat[t]),pct=total>0?v/total*100:0;const d=document.createElement('div');d.className='kpi';d.innerHTML=`<div class="t">${t}</div><div class="v">${pct.toFixed(2)}%</div><div class="small">市值 ${money(v)}</div><div class="bar"><span style="width:${Math.max(0,Math.min(100,pct))}%"></span></div>`;R.kpis.appendChild(d);});
+  S.val={total:total,assets:vals};
+  draw();
+}
+
+function historyList(){return Object.values(S.history||{}).filter(x=>x&&x.date).sort((a,b)=>String(a.date).localeCompare(String(b.date)));}
+
+function updateHistoryInfo(){
+  const arr=historyList();
+  if(!arr.length){R.hinfo.textContent='历史快照：0 天';return;}
+  R.hinfo.textContent=`历史快照：${arr.length} 天（${arr[0].date} ~ ${arr[arr.length-1].date}）`;
+}
+
+function snap(){
+  if(!S.val)return;
+  const d=dkey();
+  S.history[d]={date:d,total:num(S.val.total),assets:JSON.parse(JSON.stringify(S.val.assets))};
+  save();updateHistoryInfo();draw();
+}
+
+function applyRange(arr){
+  const rv=R.rng.value;if(rv==='all'||!arr.length)return arr;
+  const days=Number(rv);if(!Number.isFinite(days)||days<=0)return arr;
+  const end=dparse(arr[arr.length-1].date),start=new Date(end);start.setDate(start.getDate()-days+1);
+  return arr.filter(x=>dparse(x.date)>=start);
+}
+
+function draw(){
+  const cv=R.cv,ctx=cv.getContext('2d'),w=cv.clientWidth,h=cv.clientHeight,dpr=window.devicePixelRatio||1;
+  cv.width=Math.max(1,Math.floor(w*dpr));cv.height=Math.max(1,Math.floor(h*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  const rec=applyRange(historyList());
+  if(!rec.length){ctx.fillStyle='#5f6f80';ctx.font='14px "Microsoft YaHei"';ctx.fillText('暂无历史快照，先点“刷新价格”。',16,32);return;}
+  const all=[{k:'total',n:'总市值'}].concat(S.assets.map(a=>({k:a.id,n:a.name||a.code||a.id})));
+  const en=all.filter(x=>S.sel[x.k]);
+  if(!en.length){ctx.fillStyle='#5f6f80';ctx.font='14px "Microsoft YaHei"';ctx.fillText('请至少勾选一条曲线。',16,32);return;}
+  const series=en.map((s,i)=>({k:s.k,c:(s.k==='total')?'#0f5fa7':COLORS[i%COLORS.length],vals:rec.map(r=>s.k==='total'?num(r.total):(Number.isFinite(Number(r.assets&&r.assets[s.k]))?Number(r.assets[s.k]):null))}));
+  const nums=[];series.forEach(s=>s.vals.forEach(v=>{if(Number.isFinite(v))nums.push(v);}));
+  if(!nums.length){ctx.fillStyle='#5f6f80';ctx.font='14px "Microsoft YaHei"';ctx.fillText('所选曲线暂无数据。',16,32);return;}
+  let mn=Math.min(...nums),mx=Math.max(...nums);if(mn===mx){mn=mn*0.95;mx=mx*1.05+1;}const sp=mx-mn;mn=Math.max(0,mn-sp*0.08);mx=mx+sp*0.08;
+  const L=60,T=18,Rt=w-16,B=h-36,CW=Math.max(10,Rt-L),CH=Math.max(10,B-T);
+  ctx.strokeStyle='#dbe6f3';ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){const y=T+CH*i/4;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(Rt,y);ctx.stroke();const tv=mx-(mx-mn)*i/4;ctx.fillStyle='#6a7b8d';ctx.font='12px "Microsoft YaHei"';ctx.fillText(axis(tv),8,y+4);} 
+  const step=rec.length>1?CW/(rec.length-1):0;
+  const idxs=[0,Math.floor((rec.length-1)/2),rec.length-1].filter((x,i,a)=>a.indexOf(x)===i);
+  ctx.fillStyle='#6a7b8d';ctx.font='12px "Microsoft YaHei"';idxs.forEach(i=>{const x=L+step*i;ctx.fillText(rec[i].date.slice(5),Math.max(L-12,x-16),B+18)});
+  series.forEach(s=>{ctx.strokeStyle=s.c;ctx.lineWidth=2;ctx.beginPath();let st=false;s.vals.forEach((v,i)=>{if(!Number.isFinite(v))return;const x=L+step*i,y=T+(mx-v)/(mx-mn)*CH;if(!st){ctx.moveTo(x,y);st=true}else ctx.lineTo(x,y);});ctx.stroke();if(rec.length<=45){ctx.fillStyle=s.c;s.vals.forEach((v,i)=>{if(!Number.isFinite(v))return;const x=L+step*i,y=T+(mx-v)/(mx-mn)*CH;ctx.beginPath();ctx.arc(x,y,2.1,0,Math.PI*2);ctx.fill();});}});
+  ctx.strokeStyle='#cad8e7';ctx.strokeRect(L,T,CW,CH);
+}
+
+async function refresh(){
+  setStatus('正在抓取行情...');
+  const np={...S.prices};
+  S.assets.forEach(a=>{if(code(a.code)==='CASH')np[a.id]=1;});
+  const qa=S.assets.filter(a=>code(a.code)!=='CASH'&&symbols(a.code).length>0);
+  let m1=new Map(),m2=new Map();
+  try{m1=await fetchQ(qa,'t');}catch{}
+  const rest=qa.filter(a=>!m1.has(a.id));
+  if(rest.length)try{m2=await fetchQ(rest,'s');}catch{}
+  let ok=0;qa.forEach(a=>{const p=m1.get(a.id)||m2.get(a.id);if(p&&p>0){np[a.id]=p;ok++;}});
+  S.prices=np;renderPrices();snap();R.tm.textContent='上次更新：'+new Date().toLocaleString('zh-CN');
+  if(!qa.length)setStatus('没有可抓取代码（6位代码，或用 CASH 表示现金）'+storageSuffix(),'warn');
+  else if(ok===qa.length)setStatus(`行情抓取成功（${ok}/${qa.length}）`+storageSuffix(),'ok');
+  else if(ok>0)setStatus(`部分抓取成功（${ok}/${qa.length}），其余沿用上次价格`+storageSuffix(),'warn');
+  else setStatus('抓取失败，沿用上次价格'+storageSuffix(),'warn');
+  save();
+}
+
+function addAsset(){S.assets.push(sanitize({id:did(),name:'新标的',code:'',type:'股票类',share:0}));ensureSel();renderRows();renderSeries();compute();save();}
+
+let rt=null;
+function bind(){
+  R.refresh.onclick=refresh;
+  R.add.onclick=addAsset;
+  R.save.onclick=()=>{save();compute();setStatus('已手动保存'+storageSuffix(),'ok');};
+  R.loadjson.onclick=reloadJson;
+  R.export.onclick=exportJson;
+  R.rng.onchange=draw;
+  window.addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(draw,120);});
+}
+
+async function init(){
+  await load();
+  renderRows();ensureSel();renderSeries();updateHistoryInfo();renderPrices();bind();
+  if(S.remoteStatus==='loaded')setStatus('已读取同目录 portfolio_data.json，当前编辑同时保存到浏览器本地缓存','ok');
+  else if(S.remoteStatus==='missing')setStatus('同目录未找到 portfolio_data.json，当前使用浏览器本地缓存','warn');
+  else setStatus('读取同目录 JSON 失败，当前使用浏览器本地缓存','warn');
+  refresh();
+}
+init();
+</script>
+</body>
+</html>
