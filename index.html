@@ -392,7 +392,7 @@ function draw(){
   if(totalBounds){
     ctx.fillStyle='#0f5fa7';
     ctx.textAlign='left';
-    ctx.fillText('总市值',L,T-10);
+    ctx.fillText('总市值（虚线）',L,T-10);
     ctx.textAlign='right';
     for(let i=0;i<=4;i++){
       const y=T+CH*i/4;
@@ -403,7 +403,7 @@ function draw(){
   if(assetBounds){
     ctx.fillStyle='#6a7b8d';
     ctx.textAlign='right';
-    ctx.fillText('各标的市值',Rt,T-10);
+    ctx.fillText('各标的市值（实线）',Rt,T-10);
     ctx.textAlign='left';
     for(let i=0;i<=4;i++){
       const y=T+CH*i/4;
@@ -423,7 +423,7 @@ function draw(){
   series.forEach(s=>{
     const bounds=s.axis==='total'?totalBounds:assetBounds;
     if(!bounds)return;
-    ctx.strokeStyle=s.c;ctx.lineWidth=2;ctx.beginPath();
+    ctx.strokeStyle=s.c;ctx.lineWidth=2;ctx.setLineDash(s.axis==='total'?[7,5]:[]);ctx.beginPath();
     let st=false;
     s.vals.forEach((v,i)=>{
       if(!Number.isFinite(v))return;
@@ -431,6 +431,7 @@ function draw(){
       if(!st){ctx.moveTo(x,y);st=true;}else ctx.lineTo(x,y);
     });
     ctx.stroke();
+    ctx.setLineDash([]);
     if(rec.length<=45){
       ctx.fillStyle=s.c;
       s.vals.forEach((v,i)=>{
