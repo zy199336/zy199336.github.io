@@ -353,18 +353,95 @@ function draw(){
   const all=[{k:'total',n:'总市值'}].concat(S.assets.map(a=>({k:a.id,n:a.name||a.code||a.id})));
   const en=all.filter(x=>S.sel[x.k]);
   if(!en.length){ctx.fillStyle='#5f6f80';ctx.font='14px "Microsoft YaHei"';ctx.fillText('请至少勾选一条曲线。',16,32);return;}
-  const series=en.map((s,i)=>({k:s.k,c:(s.k==='total')?'#0f5fa7':COLORS[i%COLORS.length],vals:rec.map(r=>s.k==='total'?num(r.total):(Number.isFinite(Number(r.assets&&r.assets[s.k]))?Number(r.assets[s.k]):null))}));
-  const nums=[];series.forEach(s=>s.vals.forEach(v=>{if(Number.isFinite(v))nums.push(v);}));
-  if(!nums.length){ctx.fillStyle='#5f6f80';ctx.font='14px "Microsoft YaHei"';ctx.fillText('所选曲线暂无数据。',16,32);return;}
-  let mn=Math.min(...nums),mx=Math.max(...nums);if(mn===mx){mn=mn*0.95;mx=mx*1.05+1;}const sp=mx-mn;mn=Math.max(0,mn-sp*0.08);mx=mx+sp*0.08;
-  const L=60,T=18,Rt=w-16,B=h-36,CW=Math.max(10,Rt-L),CH=Math.max(10,B-T);
-  ctx.strokeStyle='#dbe6f3';ctx.lineWidth=1;
-  for(let i=0;i<=4;i++){const y=T+CH*i/4;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(Rt,y);ctx.stroke();const tv=mx-(mx-mn)*i/4;ctx.fillStyle='#6a7b8d';ctx.font='12px "Microsoft YaHei"';ctx.fillText(axis(tv),8,y+4);} 
+  const series=en.map((s,i)=>({
+    k:s.k,
+    axis:s.k==='total'?'total':'asset',
+    c:(s.k==='total')?'#0f5fa7':COLORS[i%COLORS.length],
+    vals:rec.map(r=>s.k==='total'?num(r.total):(Number.isFinite(Number(r.assets&&r.assets[s.k]))?Number(r.assets[s.k]):null))
+  }));
+  const totalNums=[],assetNums=[];
+  series.forEach(s=>s.vals.forEach(v=>{
+    if(!Number.isFinite(v))return;
+    (s.axis==='total'?totalNums:assetNums).push(v);
+  }));
+  if(!totalNums.length&&!assetNums.length){ctx.fillStyle='#5f6f80';ctx.font='14px "Microsoft YaHei"';ctx.fillText('所选曲线暂无数据。',16,32);return;}
+  const calcBounds=nums=>{
+    if(!nums.length)return null;
+    let mn=Math.min(...nums),mx=Math.max(...nums);
+    if(mn===mx){
+      const pad=Math.max(1,Math.abs(mx||1)*0.05);
+      mn=Math.max(0,mn-pad);mx=mx+pad;
+    }
+    const sp=Math.max(1,mx-mn);
+    mn=Math.max(0,mn-sp*0.08);mx=mx+sp*0.08;
+    if(mx<=mn)mx=mn+1;
+    return {mn,mx};
+  };
+  const totalBounds=calcBounds(totalNums),assetBounds=calcBounds(assetNums);
+  const L=68,T=28,Rt=w-68,B=h-36,CW=Math.max(10,Rt-L),CH=Math.max(10,B-T);
   const step=rec.length>1?CW/(rec.length-1):0;
+  const scaleY=(v,b)=>T+(b.mx-v)/(b.mx-b.mn)*CH;
+
+  ctx.strokeStyle='#dbe6f3';ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=T+CH*i/4;
+    ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(Rt,y);ctx.stroke();
+  }
+
+  ctx.font='12px "Microsoft YaHei"';
+  if(totalBounds){
+    ctx.fillStyle='#0f5fa7';
+    ctx.textAlign='left';
+    ctx.fillText('总市值',L,T-10);
+    ctx.textAlign='right';
+    for(let i=0;i<=4;i++){
+      const y=T+CH*i/4;
+      const tv=totalBounds.mx-(totalBounds.mx-totalBounds.mn)*i/4;
+      ctx.fillText(axis(tv),L-8,y+4);
+    }
+  }
+  if(assetBounds){
+    ctx.fillStyle='#6a7b8d';
+    ctx.textAlign='right';
+    ctx.fillText('各标的市值',Rt,T-10);
+    ctx.textAlign='left';
+    for(let i=0;i<=4;i++){
+      const y=T+CH*i/4;
+      const tv=assetBounds.mx-(assetBounds.mx-assetBounds.mn)*i/4;
+      ctx.fillText(axis(tv),Rt+8,y+4);
+    }
+  }
+
   const idxs=[0,Math.floor((rec.length-1)/2),rec.length-1].filter((x,i,a)=>a.indexOf(x)===i);
-  ctx.fillStyle='#6a7b8d';ctx.font='12px "Microsoft YaHei"';idxs.forEach(i=>{const x=L+step*i;ctx.fillText(rec[i].date.slice(5),Math.max(L-12,x-16),B+18)});
-  series.forEach(s=>{ctx.strokeStyle=s.c;ctx.lineWidth=2;ctx.beginPath();let st=false;s.vals.forEach((v,i)=>{if(!Number.isFinite(v))return;const x=L+step*i,y=T+(mx-v)/(mx-mn)*CH;if(!st){ctx.moveTo(x,y);st=true}else ctx.lineTo(x,y);});ctx.stroke();if(rec.length<=45){ctx.fillStyle=s.c;s.vals.forEach((v,i)=>{if(!Number.isFinite(v))return;const x=L+step*i,y=T+(mx-v)/(mx-mn)*CH;ctx.beginPath();ctx.arc(x,y,2.1,0,Math.PI*2);ctx.fill();});}});
+  ctx.fillStyle='#6a7b8d';
+  idxs.forEach(i=>{
+    const x=L+step*i;
+    ctx.textAlign=i===0?'left':(i===rec.length-1?'right':'center');
+    ctx.fillText(rec[i].date.slice(5),x,B+18);
+  });
+
+  series.forEach(s=>{
+    const bounds=s.axis==='total'?totalBounds:assetBounds;
+    if(!bounds)return;
+    ctx.strokeStyle=s.c;ctx.lineWidth=2;ctx.beginPath();
+    let st=false;
+    s.vals.forEach((v,i)=>{
+      if(!Number.isFinite(v))return;
+      const x=L+step*i,y=scaleY(v,bounds);
+      if(!st){ctx.moveTo(x,y);st=true;}else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    if(rec.length<=45){
+      ctx.fillStyle=s.c;
+      s.vals.forEach((v,i)=>{
+        if(!Number.isFinite(v))return;
+        const x=L+step*i,y=scaleY(v,bounds);
+        ctx.beginPath();ctx.arc(x,y,2.1,0,Math.PI*2);ctx.fill();
+      });
+    }
+  });
   ctx.strokeStyle='#cad8e7';ctx.strokeRect(L,T,CW,CH);
+  ctx.textAlign='left';
 }
 
 async function refresh(){
